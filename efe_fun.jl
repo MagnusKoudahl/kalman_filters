@@ -1,4 +1,5 @@
 #using Pkg;Pkg.activate(".");Pkg.instantiate()
+
 using LinearAlgebra,Distributions,PDMats
 # Calculate EFE from the original decomposition in Friston 2015.
 # EFE 	= E_{q(s)}[ G - H[q(s)]]
@@ -7,7 +8,7 @@ using LinearAlgebra,Distributions,PDMats
 # Where the first term is a crossentropy. All terms can be solved analytically for linear gaussian systems, giving an analytical solution to EFE in continuous time
 
 
-# Calculate EFE.
+# Calculate EFE. Current sticking point is how to get the joint q(s|o)p(o) right
 function efe(q_s_given_o,q_s,p_o,Σ_p_o_given_s)
     # q_s_given_o = q(s|o), can be obtained from Kalman update step
     # q_s = q(s), can be obtained from Kalman prediction step
@@ -22,6 +23,7 @@ function efe(q_s_given_o,q_s,p_o,Σ_p_o_given_s)
 
 
     # Compute p(o,s) as q(s|o)p(o). This uses the goal prior. Currently relies heavily on H = inv(H) = I
+    # Is also wrong..... -.-
     p_os = MvNormal([p_o;p_o],
 		    [q_s_given_o.Σ.mat + Σ_p_o_given_s q_s_given_o.Σ.mat + Σ_p_o_given_s ;
 		     q_s_given_o.Σ.mat + Σ_p_o_given_s q_s_given_o.Σ + q_s_given_o.Σ.mat + Σ_p_o_given_s])
