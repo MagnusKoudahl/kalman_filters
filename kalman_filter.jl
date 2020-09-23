@@ -42,8 +42,8 @@ end
 
 
 # Plot 1st dimension
-#plot(0:0.1:10,[d[1] for d in data])
-#plot!(0:0.1:10,[d.μ[1] for d in x],ribbon=[d.Σ[1] for d in x])
+plot(0:0.1:10,[d[1] for d in data])
+plot!(0:0.1:10,[d.μ[1] for d in x],ribbon=[d.Σ[1] for d in x])
 
 # Plot 2nd dimension
 plot!(0:0.1:10,[d[2] for d in data])

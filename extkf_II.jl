@@ -1,3 +1,4 @@
+# Extended KF II, non additive noise terms. Needs proper transition/emission functions to not degenerate into completely deterministic system
 using Pkg;Pkg.activate(".");Pkg.instantiate()
 using OhMyREPL, Plots, Distributions, ForwardDiff, LinearAlgebra
 enable_autocomplete_brackets(false)
@@ -12,41 +13,48 @@ function generate_data(start,f,h,σ)
     obs = Vector(undef,T)
     states[1] = start
     for t in 1:T
-	states[t+1] = f(states[t]) # No noise since we just want observations
+	states[t+1] = f(vcat(states[t],0.)) # No noise since we just want observations
 	obs[t] = h(states[t])
     end
     noise = [(rand(size(o)[1]) .- 0.5) .* σ for o in obs]
     return obs .+ noise,states
 end
 
-# Transition function
+# Transition function. Does not depend on noise, so technically wrong
 function f(x)
-    # Returns [f(x),0..]
     #g = 0.1
-    [x[1] + x[2] * Δt, x[2] - 1.0 * sin(x[1]) * Δt,0,0]
+    [x[1] + x[2] * Δt, x[2] - 1.0 * sin(x[1]) * Δt]
 end
 
-# Emission function
+# Emission function. Does not depend on noise, so technically wrong
 function h(x)
-    x
+    x[1:2]
 end
 
 
 # Prediction step
 function kalman_predict(prior, f, Q)
-    ∇f = jacobian(f,mean(prior))
-    Σ = round.(∇f * cov(prior) * transpose(∇f) + Q, digits=5) # Round to avoid issues with numerical precision
-    MvNormal(f(mean(prior)),Σ)
+    idx = size(prior)[1]# Get dim of state
+    ∇f = jacobian(f,vcat(mean(prior),zeros(idx))) # Jacobian of f. Augment with extra zeros
+    ∇f_x = ∇f[:,1:idx]	# Portion that pertains to x
+    ∇f_q = ∇f[:,idx+1:end]# Portion that pertains to q
+    Σ = round.(∇f_x * cov(prior) * ∇f_x' + ∇f_q * Q * ∇f_q', digits=5) # Round to avoid issues with numerical precision
+    MvNormal(f(mean(prior)),Σ + I*eps()) # Add epsilon to avoid zero matrices
 end
 
 # Update step
 function kalman_update(prior, y, h, R)
-    v = y - h(mean(prior))
-    ∇h = jacobian(h,mean(prior)) # returns the transpose for some reason?
-    S = ∇h' * cov(prior) * ∇h .+ R# So transposes are reversed
-    K = cov(prior) * ∇h * inv(S)
+    idx = size(prior)[1]	 # Get dim of state
+    v = y - h(vcat(mean(prior),zeros(idx)))
+
+    ∇h = jacobian(h,vcat(mean(prior),zeros(idx)))
+    ∇h_x = ∇h[:,1:idx]	# Portion that pertains to x
+    ∇h_q = ∇h[:,idx+1:end] # Portion that pertains to q
+
+    S = ∇h_x * cov(prior) * ∇h_x' + ∇h_q * R * ∇h_q'
+    K = cov(prior) * ∇h_x' * inv(S)
     Σ = round.(cov(prior) - K * S * transpose(K),digits=5) # Round to avoid numerical errors
-    MvNormal(mean(prior) + K * v, Σ)
+    MvNormal(mean(prior) + K * v, Σ + I*eps()) # Epsilon to avoid getting a zero matrix when mapping is deterministic
 end
 
 # Params
@@ -54,13 +62,13 @@ end
 start = [1.,1.]
 T = 1000
 σ = [1.0,1.0]
-# Process noise
+# Process noise. Currently does nothing
 Q = [.1 0. ; 0. .1]
-# Emission noise
+# Emission noise. Currently does nothing
 R = [σ[1] 0.0 ; 0.0 σ[2]]
+
 # Initial state
 global prior = MvNormal(start, [1.0 0. ; 0. 1.0])
-#data = generate_data(start,T,g,Δt,σ)
 data, states = generate_data(start,f,h,σ)
 
 # Storage and simulation loop
