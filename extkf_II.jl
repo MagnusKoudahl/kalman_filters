@@ -21,8 +21,9 @@ end
 
 # Transition function
 function f(x)
+    # Returns [f(x),0..]
     #g = 0.1
-    [x[1] + x[2] * Δt, x[2] - 1.0 * sin(x[1]) * Δt]
+    [x[1] + x[2] * Δt, x[2] - 1.0 * sin(x[1]) * Δt,0,0]
 end
 
 # Emission function
