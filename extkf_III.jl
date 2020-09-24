@@ -9,7 +9,7 @@ gradient = ForwardDiff.gradient
 function hessian(f,x)
     n = length(x)
     hess = ForwardDiff.jacobian( x -> ForwardDiff.jacobian(f,x),x)
-    reshape(hess, n, n, n)
+    reshape(hess, n, n, n) # Gets an array of Hessians that are square
 end
 
 
@@ -26,13 +26,13 @@ function generate_data(start,f,h,σ)
     return obs .+ noise,states
 end
 
-# Transition function. Does not depend on noise, so technically wrong
+# Transition function.
 function f(x)
     #g = 0.1
     [x[1] + x[2] * Δt, x[2] - 1.0 * sin(x[1]) * Δt]
 end
 
-# Emission function. Does not depend on noise, so technically wrong
+# Emission function.
 function h(x)
     x
 end
@@ -80,7 +80,7 @@ start = [1.,1.]
 T = 1000
 σ = [1.0,1.0]
 # Process noise.
-Q = [.1 0. ; 0. .1]
+Q = [.5 0. ; 0. .5]
 # Emission noise.
 R = [σ[1] 0.0 ; 0.0 σ[2]]
 
