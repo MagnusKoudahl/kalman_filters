@@ -1,4 +1,4 @@
-# Extended KF II, non additive noise terms. Needs proper transition/emission functions to not degenerate into completely deterministic system
+# Extended Kalman filter III. Second order Taylor expansion
 using Pkg;Pkg.activate(".");Pkg.instantiate()
 using OhMyREPL, Plots, Distributions, ForwardDiff, LinearAlgebra
 enable_autocomplete_brackets(false)
@@ -6,18 +6,24 @@ enable_autocomplete_brackets(false)
 # shorthand
 jacobian = ForwardDiff.jacobian
 gradient = ForwardDiff.gradient
+function hessian(f,x)
+    n = length(x)
+    hess = ForwardDiff.jacobian( x -> ForwardDiff.jacobian(f,x),x)
+    reshape(hess, n, n, n)
+end
 
-# Generate data from correct model
+
+# Generate data from model
 function generate_data(start,f,h,σ)
     states = Vector(undef,T+1)
     obs = Vector(undef,T)
     states[1] = start
-    idx = size(start)[1]
     for t in 1:T
-	states[t+1] = f(vcat(states[t],zeros(idx))) # No noise since we just want observations
-	obs[t] = h(vcat(states[t],zeros(idx)))
+	states[t+1] = f(vcat(states[t],0.)) # No noise since we just want observations
+	obs[t] = h(states[t])
     end
-    return obs,states
+    noise = [(rand(size(o)[1]) .- 0.5) .* σ for o in obs]
+    return obs .+ noise,states
 end
 
 # Transition function. Does not depend on noise, so technically wrong
@@ -28,32 +34,43 @@ end
 
 # Emission function. Does not depend on noise, so technically wrong
 function h(x)
-    x[1:2]
+    x
 end
+
 
 
 # Prediction step
 function kalman_predict(prior, f, Q)
     idx = size(prior)[1]# Get dim of state
-    ∇f = jacobian(f,vcat(mean(prior),zeros(idx))) # Jacobian of f. Augment with extra zeros
-    ∇f_x = ∇f[:,1:idx]	# Portion that pertains to x
-    ∇f_q = ∇f[:,idx+1:end]# Portion that pertains to q
-    Σ = round.(∇f_x * cov(prior) * ∇f_x' + ∇f_q * Q * ∇f_q', digits=5) # Round to avoid issues with numerical precision
-    MvNormal(f(mean(prior)),Σ + I*eps()) # Add epsilon to avoid zero matrices
+    e = I(idx) # stack of e vectors from Sarkka.
+
+    ∇f = jacobian(f,mean(prior))
+    ∇∇f = hessian(f,mean(prior))
+
+    μ = f(mean(prior)) + 0.5 * [tr(∇∇f[:,:,i] * cov(prior)) for i in 1:idx]
+
+    # List comprehension in the middle computes array. Round to avoid numerical errors
+    Σ = round.(∇f * cov(prior) * ∇f' + 0.5 * [e[i] * e'[j]* tr(∇∇f[:,:,i] * cov(prior) * ∇∇f[:,:,j] * cov(prior)) for i in 1:idx, j in 1:idx]+ Q, digits=5)
+
+    MvNormal(μ,Σ + I*eps()) # Add epsilon to avoid zero diagonals
 end
 
 # Update step
 function kalman_update(prior, y, h, R)
     idx = size(prior)[1]	 # Get dim of state
-    v = y - h(vcat(mean(prior),zeros(idx)))
+    e = I(idx) # stack of e vectors from Sarkka.
 
-    ∇h = jacobian(h,vcat(mean(prior),zeros(idx)))
-    ∇h_x = ∇h[:,1:idx]	# Portion that pertains to x
-    ∇h_q = ∇h[:,idx+1:end] # Portion that pertains to q
+    ∇h = jacobian(h,mean(prior))
+    ∇∇h = hessian(h,mean(prior))
 
-    S = ∇h_x * cov(prior) * ∇h_x' + ∇h_q * R * ∇h_q'
-    K = cov(prior) * ∇h_x' * inv(S)
-    Σ = round.(cov(prior) - K * S * transpose(K),digits=5) # Round to avoid numerical errors
+    v = y - h(mean(prior)) - 0.5 * [tr(∇∇h[:,:,i] * cov(prior)) for i in 1:idx]
+
+    # List comprehension with e to handle the sum
+    S = ∇h * cov(prior) * ∇h'+ 0.5* [e[i] * e'[j]* tr(∇∇h[:,:,i] * cov(prior) * ∇∇h[:,:,j] * cov(prior)) for i in 1:idx, j in 1:idx] + R
+
+    K = cov(prior) * ∇h' * inv(S)
+    Σ = round.(cov(prior) - K * S * K',digits=5) # Round to avoid numerical errors
+
     MvNormal(mean(prior) + K * v, Σ + I*eps()) # Epsilon to avoid getting a zero matrix when mapping is deterministic
 end
 
@@ -62,9 +79,9 @@ end
 start = [1.,1.]
 T = 1000
 σ = [1.0,1.0]
-# Process noise. Currently does nothing
+# Process noise.
 Q = [.1 0. ; 0. .1]
-# Emission noise. Currently does nothing
+# Emission noise.
 R = [σ[1] 0.0 ; 0.0 σ[2]]
 
 # Initial state
